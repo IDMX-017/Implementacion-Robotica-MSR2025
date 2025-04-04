@@ -27,7 +27,13 @@ setup(
         'console_scripts': [
             'dc_motor = motor_control.dc_motor:main',
             'set_point = motor_control.set_point:main',
-	    'ctrl = motor_control.controller:main'
+	        'ctrl = motor_control.controller:main',
+            'trajectory = motor_control.trajectory:main', 
+            'inverse_kinematics = motor_control.inverse_kinematics:main', 
+            'odometry = motor_control.odometry:main', 
+            'cmd_vel_mux = motor_control.cmd_vel_mux:main',
+            'teleop_twist_keyboard = motor_control.teleop_twist_keyboard:main', 
+            'escaneo_3d = motor_control.escaneo_3d_node:main'
         ],
     },
 )

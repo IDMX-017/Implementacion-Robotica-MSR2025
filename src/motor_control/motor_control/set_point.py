@@ -12,7 +12,7 @@ class SetPointPublisher(Node):
     def __init__(self):
         super().__init__('set_point_node')
 
-        self.declare_parameter('signal_type', 'sine')  # 'sine', 'square' o 'vision'
+        self.declare_parameter('signal_type', 'sine')  # 'sine', 'square', 'constant' o 'vision'
         self.declare_parameter('amplitude', 2.0)
         self.declare_parameter('omega', 1.0)
 
@@ -64,6 +64,8 @@ class SetPointPublisher(Node):
             self.signal_msg.data = self.amplitude * np.sign(np.sin(self.omega * elapsed_time))
         elif self.signal_type == 'vision':
             self._vision_logic()
+        elif self.signal_type == 'constant': 
+            self.signal_msg.data = self.amplitude 
 
         # Publica
         self.signal_publisher.publish(self.signal_msg)
