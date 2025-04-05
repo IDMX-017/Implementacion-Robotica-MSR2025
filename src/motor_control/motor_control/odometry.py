@@ -7,6 +7,7 @@ from nav_msgs.msg import Odometry
 from std_msgs.msg import Float32
 from rcl_interfaces.msg import SetParametersResult
 from geometry_msgs.msg import Twist
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy
 
 class OdometryNode(Node):
     def __init__(self):
@@ -35,17 +36,20 @@ class OdometryNode(Node):
         # Velocidades de las ruedas
         self.left_speed = 0.0
         self.right_speed = 0.0
+
+        # Crear un perfil de QoS con BEST_EFFORT para las suscripciones a los encoders
+        qos_profile = QoSProfile(depth=10)
+        qos_profile.reliability = QoSReliabilityPolicy.BEST_EFFORT
         
         # Subscripciones a las velocidades de las ruedas
         self.left_speed_sub = self.create_subscription(
-            Float32, 'left/motor_speed_y', self.left_speed_callback, 10)#left/motor_speed_y
+            Float32, 'left/motor_speed_y', self.left_speed_callback, 10)  # left/motor_speed_y VelocityEncL
         self.right_speed_sub = self.create_subscription(
-            Float32, 'right/motor_speed_y', self.right_speed_callback, 10)#right/motor_speed_y
+            Float32, 'right/motor_speed_y', self.right_speed_callback, 10)  # right/motor_speed_y VelocityEncR
         
         # Publicador de odometría
         self.odom_pub = self.create_publisher(Odometry, 'odom', 10)
-        # Publicadores de velocidades y Twist para Gazebo
-        self.cmd_vel_pub = self.create_publisher(Twist, 'ik_cmd_vel', 10)#'puzzlebot/cmd_vel', 10)
+        # Publicadores de velocidades globales
         self.global_vel_x_pub = self.create_publisher(Float32, 'global_velocity_x', 10)
         self.global_vel_y_pub = self.create_publisher(Float32, 'global_velocity_y', 10)
         
@@ -80,31 +84,24 @@ class OdometryNode(Node):
         self.theta += omega * dt
 
         # Propagación de la covarianza:
-        # Jacobiano respecto al estado
         H = np.array([[1, 0, -dt * V * math.sin(self.theta)],
                       [0, 1,  dt * V * math.cos(self.theta)],
                       [0, 0, 1]])
         
-        # Jacobiano respecto a las velocidades de las ruedas (dH)
         dH = np.array([[0.5 * dt * R * math.cos(self.theta), 0.5 * dt * R * math.cos(self.theta)],
                        [0.5 * dt * R * math.sin(self.theta), 0.5 * dt * R * math.sin(self.theta)],
                        [dt * R / L, -dt * R / L]])
         
-        # Matriz de ruido en las velocidades: se asume que el error aumenta con la magnitud de la velocidad
         K = np.array([[self.sigma_squared * abs(self.left_speed), 0],
                       [0, self.sigma_squared * abs(self.right_speed)]])
         
-        # Q: Covarianza del proceso
         Q = dH @ K @ dH.T
         
-        # Actualizar la covarianza: Sigma_new = H*Sigma_old*H^T + Q
         self.Sig = H @ self.Sig @ H.T + Q
 
-        # Calcular velocidades globales (para publicarlas)
         global_vel_x = V * math.cos(self.theta)
         global_vel_y = V * math.sin(self.theta)
 
-        # Preparar y publicar mensaje de odometría
         odom_msg = Odometry()
         odom_msg.header.stamp = self.get_clock().now().to_msg()
         odom_msg.header.frame_id = "odom"
@@ -114,33 +111,22 @@ class OdometryNode(Node):
         odom_msg.pose.pose.position.y = self.y
         odom_msg.pose.pose.position.z = 0.0
         
-        # Convertir theta a cuaternión (asumimos giro solo en z)
         qz = math.sin(self.theta / 2.0)
         qw = math.cos(self.theta / 2.0)
         odom_msg.pose.pose.orientation.z = qz
         odom_msg.pose.pose.orientation.w = qw
         
-        # Asignar algunos elementos de la covarianza (por ejemplo, x, y y theta)
-        # Nota: El mensaje odom.pose.covariance es un arreglo lineal de 36 elementos (6x6)
-        odom_msg.pose.covariance[0] = self.Sig[0, 0]  # varianza en x
-        odom_msg.pose.covariance[1] = self.Sig[0, 1]  # covarianza x-y
-        odom_msg.pose.covariance[6] = self.Sig[1, 0]  # covarianza y-x
-        odom_msg.pose.covariance[7] = self.Sig[1, 1]  # varianza en y
-        odom_msg.pose.covariance[35] = self.Sig[2, 2] # varianza en theta
+        odom_msg.pose.covariance[0] = self.Sig[0, 0]
+        odom_msg.pose.covariance[1] = self.Sig[0, 1]
+        odom_msg.pose.covariance[6] = self.Sig[1, 0]
+        odom_msg.pose.covariance[7] = self.Sig[1, 1]
+        odom_msg.pose.covariance[35] = self.Sig[2, 2]
 
-        # Velocidades (locales)
         odom_msg.twist.twist.linear.x = V
         odom_msg.twist.twist.angular.z = omega
 
         self.odom_pub.publish(odom_msg)
 
-        # Publicar comando para Gazebo
-        twist_msg = Twist()
-        twist_msg.linear.x = V
-        twist_msg.angular.z = omega
-        self.cmd_vel_pub.publish(twist_msg)
-        
-        # Publicar velocidades globales
         gx_msg = Float32()
         gx_msg.data = global_vel_x
         self.global_vel_x_pub.publish(gx_msg)
@@ -166,7 +152,6 @@ class OdometryNode(Node):
                     return SetParametersResult(successful=False, reason="sample_time must be > 0")
                 self.sample_time = param.value
                 self.get_logger().info(f"sample_time updated to: {self.sample_time}")
-                # Reiniciar timer con el nuevo tiempo de muestreo
                 self.timer.destroy()
                 self.timer = self.create_timer(self.sample_time, self.timer_callback)
         return SetParametersResult(successful=True)

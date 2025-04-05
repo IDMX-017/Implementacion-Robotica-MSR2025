@@ -6,6 +6,7 @@ from std_msgs.msg import Float32
 import math
 from rcl_interfaces.msg import SetParametersResult
 import transforms3d as tfe
+from geometry_msgs.msg import Twist
 
 def saturate(value, min_val, max_val):
     return max(min(value, max_val), min_val)
@@ -82,6 +83,7 @@ class InverseKinematics(Node):
         # Publicadores de setpoints
         self.left_setpoint_pub = self.create_publisher(Float32, 'left/set_point', 10)
         self.right_setpoint_pub = self.create_publisher(Float32, 'right/set_point', 10)
+        self.cmd_vel_pub = self.create_publisher(Twist, 'ik_cmd_vel', 10)
         
         # Publicador para visualizar el yaw actual
         self.current_yaw_pub = self.create_publisher(Float32, 'current_yaw', 10)
@@ -188,6 +190,12 @@ class InverseKinematics(Node):
         r_msg = Float32()
         r_msg.data = right_setpoint
         self.right_setpoint_pub.publish(r_msg)
+
+        # Publicar también el Twist con (v, ω) para el robot real
+        twist_msg = Twist()
+        twist_msg.linear.x = V_d      # m/s
+        twist_msg.angular.z = omega_d # rad/s
+        self.cmd_vel_pub.publish(twist_msg)
 
     def quaternion_to_yaw(self, q):
         # Reordena [w, x, y, z] para transforms3d
